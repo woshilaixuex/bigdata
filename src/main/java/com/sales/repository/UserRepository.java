@@ -317,10 +317,24 @@ public class UserRepository extends BaseHBaseRepository {
         }
         try {
             return LocalDateTime.parse(dateTimeStr, DateTimeFormatter.ISO_LOCAL_DATE_TIME);
-        } catch (Exception e) {
-            log.error("Failed to parse date time: {}", dateTimeStr, e);
-            return null;
+        } catch (Exception ignored) {
+            // ignore
         }
+
+        try {
+            return LocalDate.parse(dateTimeStr, DateTimeFormatter.ISO_LOCAL_DATE).atStartOfDay();
+        } catch (Exception ignored) {
+            // ignore
+        }
+
+        try {
+            return LocalDateTime.parse(dateTimeStr, DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+        } catch (Exception ignored) {
+            // ignore
+        }
+
+        log.error("Failed to parse date time: {}", dateTimeStr);
+        return null;
     }
 
     private String formatDate(LocalDate date) {

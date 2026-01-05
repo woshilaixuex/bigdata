@@ -22,6 +22,9 @@ public abstract class BaseHBaseRepository {
     protected Connection connection;
 
     protected Table getTable(TableName tableName) throws IOException {
+        if (connection == null) {
+            throw new IOException("HBase connection is not available (Connection bean is null). Please check HBase configuration and connectivity.");
+        }
         return connection.getTable(tableName);
     }
 

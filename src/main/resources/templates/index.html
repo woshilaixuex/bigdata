@@ -47,21 +47,36 @@
         
         .nav {
             display: flex;
-            gap: 30px;
+            gap: 5px;
             align-items: center;
+            flex: 1;
+            overflow-x: auto;
+            overflow-y: hidden;
+            white-space: nowrap;
+            -webkit-overflow-scrolling: touch;
+            margin: 0 16px;
+        }
+
+        .nav::-webkit-scrollbar {
+            height: 6px;
+        }
+
+        .nav::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.25);
+            border-radius: 999px;
         }
         
         .nav-item {
             color: white;
             text-decoration: none;
-            font-size: 16px;
-            padding: 8px 15px;
-            border-radius: 6px;
-            transition: all 0.3s;
+            padding: 8px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
             display: flex;
             align-items: center;
             gap: 8px;
-            cursor: pointer;
+            flex: 0 0 auto;
         }
         
         .nav-item:hover, .nav-item.active {
@@ -72,6 +87,61 @@
             display: flex;
             align-items: center;
             gap: 15px;
+            flex: 0 0 auto;
+            position: relative;
+        }
+
+        .session-panel {
+            position: absolute;
+            top: 58px;
+            right: 0;
+            width: 420px;
+            max-width: calc(100vw - 40px);
+            background: white;
+            color: #111827;
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+            padding: 16px;
+            display: none;
+            z-index: 3000;
+        }
+
+        .session-panel.show {
+            display: block;
+        }
+
+        .session-row {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .session-input {
+            flex: 1;
+            min-width: 220px;
+            padding: 10px;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            outline: none;
+        }
+
+        .user-mini {
+            margin-top: 12px;
+            background: #f9fafb;
+            border: 1px solid #e5e7eb;
+            border-radius: 10px;
+            padding: 12px;
+        }
+
+        .kv {
+            display: grid;
+            grid-template-columns: 100px 1fr;
+            gap: 8px 12px;
+            font-size: 14px;
+        }
+
+        .kv .k {
+            color: #6b7280;
         }
         
         .avatar {
@@ -504,16 +574,21 @@
                     <i class="fas fa-chart-line"></i>
                     <span>销售分析</span>
                 </div>
+                <div class="nav-item" onclick="showPage('users')">
+                    <i class="fas fa-user"></i>
+                    <span>用户管理</span>
+                </div>
+                <div class="nav-item" onclick="showPage('ranking')">
+                    <i class="fas fa-trophy"></i>
+                    <span>排行榜</span>
+                </div>
             </div>
             
             <div class="user-info">
                 <div class="avatar">
                     <i class="fas fa-user"></i>
                 </div>
-                <span>管理员</span>
-                <button class="btn" onclick="showModal('logoutModal')" style="background: rgba(255,255,255,0.2); color: white; padding: 6px 12px;">
-                    <i class="fas fa-sign-out-alt"></i>
-                </button>
+                <span id="navUserName">管理员</span>
             </div>
         </div>
 
@@ -649,6 +724,41 @@
             </h2>
             <div class="loading">
                 <div class="loading-spinner"></div>
+            </div>
+        </div>
+
+        <div id="users" class="page-container">
+            <h2 class="page-title">
+                <i class="fas fa-user"></i>
+                用户&会话
+            </h2>
+            <div class="loading">
+                <div class="loading-spinner"></div>
+            </div>
+        </div>
+
+        <div id="ranking" class="page-container">
+            <h2 class="page-title">
+                <i class="fas fa-trophy"></i>
+                排行榜
+            </h2>
+            <div class="loading">
+                <div class="loading-spinner"></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="productModal" class="modal" onclick="closeProductModal()">
+        <div class="modal-content" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <h3 id="productModalTitle">商品详情</h3>
+                <button class="btn" onclick="closeProductModal()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div id="productModalBody" class="modal-body"></div>
+            <div class="modal-footer">
+                <button class="btn" onclick="closeProductModal()">关闭</button>
             </div>
         </div>
     </div>

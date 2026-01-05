@@ -9,6 +9,26 @@ function formatMoney(value) {
     return num.toFixed(2);
 }
 
+async function fetchJson(url, options) {
+    const response = await fetch(url, options);
+    const text = await response.text();
+
+    if (!response.ok) {
+        const snippet = text ? text.slice(0, 300) : '';
+        throw new Error(`HTTP ${response.status} ${response.statusText}: ${snippet}`);
+    }
+
+    if (!text) {
+        return null;
+    }
+
+    try {
+        return JSON.parse(text);
+    } catch (e) {
+        throw new Error(`Invalid JSON: ${text.slice(0, 300)}`);
+    }
+}
+
 // 页面切换函数
 function showPage(pageId) {
     // 隐藏所有页面
@@ -51,15 +71,97 @@ function loadPageData(pageId) {
         case 'analysis':
             loadAnalysisData();
             break;
+        case 'users':
+            loadUsersData();
+            break;
+        case 'ranking':
+            loadRankingData();
+            break;
     }
+}
+
+function escapeHtml(text) {
+    const str = String(text ?? '');
+    return str
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+function renderJson(containerId, data) {
+    const el = document.getElementById(containerId);
+    if (!el) return;
+    el.innerHTML = `<pre style="white-space: pre-wrap; word-break: break-word; background: #f8fafc; border: 1px solid #e5e7eb; padding: 12px; border-radius: 8px;">${escapeHtml(JSON.stringify(data, null, 2))}</pre>`;
+}
+
+function getInputValue(id) {
+    const el = document.getElementById(id);
+    return el ? el.value.trim() : '';
+}
+
+function setText(id, text) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = text;
+}
+
+function formatDate(dateStr) {
+    if (!dateStr) return '-';
+    try {
+        const d = new Date(dateStr);
+        if (Number.isNaN(d.getTime())) return String(dateStr);
+        return d.toLocaleDateString('zh-CN');
+    } catch (e) {
+        return String(dateStr);
+    }
+}
+
+function formatDateTime(dateTimeStr) {
+    if (!dateTimeStr) return '未知时间';
+    try {
+        const date = new Date(dateTimeStr);
+        return date.toLocaleString('zh-CN', {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+    } catch (error) {
+        return dateTimeStr;
+    }
+}
+
+function renderUserDetail(user) {
+    const el = document.getElementById('userDetailCard');
+    if (!el) return;
+
+    if (!user) {
+        el.innerHTML = '<div style="color:#6b7280;">选择一个用户查看详情</div>';
+        return;
+    }
+
+    const statusText = user?.status === 1 ? '正常' : user?.status === 0 ? '禁用' : '-';
+    el.innerHTML = `
+        <div class="kv">
+            <div class="k">username</div><div>${escapeHtml(user?.username ?? '-')}</div>
+            <div class="k">nickname</div><div>${escapeHtml(user?.nickname ?? '-')}</div>
+            <div class="k">phone</div><div>${escapeHtml(user?.phone ?? '-')}</div>
+            <div class="k">email</div><div>${escapeHtml(user?.email ?? '-')}</div>
+            <div class="k">gender</div><div>${escapeHtml(user?.gender ?? '-')}</div>
+            <div class="k">birthday</div><div>${escapeHtml(formatDate(user?.birthday))}</div>
+            <div class="k">register_time</div><div>${escapeHtml(formatDateTime(user?.registerTime))}</div>
+            <div class="k">status</div><div>${escapeHtml(statusText)}</div>
+        </div>
+    `;
 }
 
 // 加载仪表板数据
 async function loadDashboardData() {
     try {
         // 加载看板数据
-        const dashboardResponse = await fetch(`${API_BASE}/analysis/dashboard`);
-        const dashboardData = await dashboardResponse.json();
+        const dashboardData = await fetchJson(`${API_BASE}/analysis/dashboard`);
         
         document.getElementById('todaySalesAmount').textContent = `¥ ${formatMoney(dashboardData.totalAmount)}`;
         document.getElementById('todayOrderCount').textContent = dashboardData.orderCount;
@@ -83,8 +185,7 @@ async function loadDashboardData() {
 // 加载热销商品
 async function loadHotProducts() {
     try {
-        const response = await fetch(`${API_BASE}/products/hot?limit=3`);
-        const products = await response.json();
+        const products = await fetchJson(`${API_BASE}/products/hot?limit=3`);
         
         const container = document.getElementById('hotProducts');
         container.innerHTML = '';
@@ -114,9 +215,14 @@ function createProductCard(product) {
             <div class="product-name">${product.name}</div>
             <div class="product-price">¥ ${formatMoney(product.price)}</div>
             <div class="product-stock">库存: ${product.realTimeStock || product.totalStock || 0}件 | 已售: ${product.saleCount || 0}件</div>
-            <button class="btn btn-primary" onclick="viewProduct('${product.productId}')">
-                <i class="fas fa-eye"></i> 查看详情
-            </button>
+            <div style="display:flex; gap:10px; margin-top:10px;">
+                <button class="btn btn-primary" onclick="viewProduct('${product.productId}')">
+                    <i class="fas fa-eye"></i> 查看详情
+                </button>
+                <button class="btn btn-danger" onclick="deleteProduct('${product.productId}')">
+                    <i class="fas fa-trash"></i> 删除
+                </button>
+            </div>
         </div>
     `;
     
@@ -126,8 +232,7 @@ function createProductCard(product) {
 // 加载最近订单
 async function loadRecentOrders() {
     try {
-        const response = await fetch(`${API_BASE}/orders/recent?limit=5`);
-        const orders = await response.json();
+        const orders = await fetchJson(`${API_BASE}/orders/recent?limit=5`);
         
         const tbody = document.getElementById('recentOrders');
         tbody.innerHTML = '';
@@ -169,8 +274,7 @@ function createOrderRow(order) {
 // 加载低库存商品数量
 async function loadLowStockCount() {
     try {
-        const response = await fetch(`${API_BASE}/products/low-stock?limit=100`);
-        const products = await response.json();
+        const products = await fetchJson(`${API_BASE}/products/low-stock?limit=100`);
         
         document.getElementById('lowStockCount').textContent = products.length;
         
@@ -188,8 +292,7 @@ async function loadProductsData() {
     }
     
     try {
-        const response = await fetch(`${API_BASE}/products?limit=20`);
-        const products = await response.json();
+        const products = await fetchJson(`${API_BASE}/products?limit=20`);
         
         const pageContainer = document.getElementById('products');
         pageContainer.innerHTML = `
@@ -216,8 +319,7 @@ async function loadOrdersData() {
     }
     
     try {
-        const response = await fetch(`${API_BASE}/orders/recent?limit=20`);
-        const orders = await response.json();
+        const orders = await fetchJson(`${API_BASE}/orders/recent?limit=20`);
         
         const pageContainer = document.getElementById('orders');
         pageContainer.innerHTML = `
@@ -260,8 +362,7 @@ async function loadCartData() {
     try {
         // 模拟用户ID，实际应该从会话中获取
         const userId = 'U001';
-        const response = await fetch(`${API_BASE}/cart/${userId}`);
-        const cartItems = await response.json();
+        const cartItems = await fetchJson(`${API_BASE}/cart/${userId}`);
         
         const pageContainer = document.getElementById('cart');
         pageContainer.innerHTML = `
@@ -331,8 +432,7 @@ async function loadAnalysisData() {
     try {
         // 加载今日销售数据
         const today = new Date().toISOString().split('T')[0];
-        const response = await fetch(`${API_BASE}/analysis/daily/${today}`);
-        const salesData = await response.json();
+        const salesData = await fetchJson(`${API_BASE}/analysis/daily/${today}`);
         
         const pageContainer = document.getElementById('analysis');
         pageContainer.innerHTML = `
@@ -370,8 +470,76 @@ async function loadAnalysisData() {
 }
 
 // 查看商品详情
-function viewProduct(productId) {
-    showToast(`查看商品详情: ${productId}`, 'success');
+function openProductModal(title, html) {
+    const modal = document.getElementById('productModal');
+    const titleEl = document.getElementById('productModalTitle');
+    const bodyEl = document.getElementById('productModalBody');
+    if (!modal || !titleEl || !bodyEl) return;
+    titleEl.textContent = title;
+    bodyEl.innerHTML = html;
+    modal.classList.add('active');
+}
+
+function closeProductModal() {
+    const modal = document.getElementById('productModal');
+    if (!modal) return;
+    modal.classList.remove('active');
+}
+
+async function viewProduct(productId) {
+    try {
+        if (!productId) {
+            showToast('productId 为空', 'warning');
+            return;
+        }
+        const p = await fetchJson(`${API_BASE}/products/${encodeURIComponent(productId)}`);
+        const img = (p.images && p.images.length > 0) ? p.images[0] : '';
+
+        const html = `
+            <div style="display:flex; gap:16px; flex-wrap:wrap;">
+                <div style="width:220px;">
+                    ${img ? `<img src="${escapeHtml(img)}" style="width:220px; height:220px; object-fit:cover; border-radius: 10px; border: 1px solid #e5e7eb;">` : ''}
+                </div>
+                <div style="flex:1; min-width:240px;">
+                    <div class="kv">
+                        <div class="k">productId</div><div>${escapeHtml(p.productId ?? '-')}</div>
+                        <div class="k">name</div><div>${escapeHtml(p.name ?? '-')}</div>
+                        <div class="k">category</div><div>${escapeHtml(p.category ?? '-')}</div>
+                        <div class="k">price</div><div>¥ ${escapeHtml(formatMoney(p.price))}</div>
+                        <div class="k">status</div><div>${escapeHtml(String(p.status ?? '-'))}</div>
+                        <div class="k">realTimeStock</div><div>${escapeHtml(String(p.realTimeStock ?? '-'))}</div>
+                        <div class="k">totalStock</div><div>${escapeHtml(String(p.totalStock ?? '-'))}</div>
+                        <div class="k">saleCount</div><div>${escapeHtml(String(p.saleCount ?? '-'))}</div>
+                        <div class="k">viewCount</div><div>${escapeHtml(String(p.viewCount ?? '-'))}</div>
+                        <div class="k">description</div><div>${escapeHtml(p.description ?? '-')}</div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        openProductModal(`商品详情：${p.name || p.productId || ''}`, html);
+    } catch (e) {
+        console.error(e);
+        showToast('获取商品详情失败', 'error');
+    }
+}
+
+async function deleteProduct(productId) {
+    try {
+        if (!productId) {
+            showToast('productId 为空', 'warning');
+            return;
+        }
+        const ok = confirm(`确认删除商品：${productId}？`);
+        if (!ok) return;
+
+        await fetchJson(`${API_BASE}/products/${encodeURIComponent(productId)}`, { method: 'DELETE' });
+        showToast('删除成功', 'success');
+        loadProductsData();
+    } catch (e) {
+        console.error(e);
+        showToast('删除失败', 'error');
+    }
 }
 
 // 查看订单详情
@@ -432,22 +600,6 @@ function getStatusText(status) {
 }
 
 // 格式化日期时间
-function formatDateTime(dateTimeStr) {
-    if (!dateTimeStr) return '未知时间';
-    
-    try {
-        const date = new Date(dateTimeStr);
-        return date.toLocaleString('zh-CN', {
-            year: 'numeric',
-            month: '2-digit',
-            day: '2-digit',
-            hour: '2-digit',
-            minute: '2-digit'
-        });
-    } catch (error) {
-        return dateTimeStr;
-    }
-}
 
 // 显示提示信息
 function showToast(message, type = 'success') {
@@ -475,6 +627,8 @@ function showToast(message, type = 'success') {
 
 // 页面加载完成后初始化
 document.addEventListener('DOMContentLoaded', function() {
+    setText('navUserName', '管理员');
+
     // 加载首页数据
     loadDashboardData();
     
@@ -492,3 +646,233 @@ window.showPage = showPage;
 window.viewProduct = viewProduct;
 window.viewOrder = viewOrder;
 window.removeFromCart = removeFromCart;
+window.deleteProduct = deleteProduct;
+window.closeProductModal = closeProductModal;
+
+async function loadUsersData() {
+    const pageContainer = document.getElementById('users');
+    pageContainer.innerHTML = `
+        <h2 class="page-title">
+            <i class="fas fa-user"></i>
+            用户管理
+        </h2>
+        <div class="table-container">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>用户名</th>
+                        <th>昵称</th>
+                        <th>手机号</th>
+                        <th>邮箱</th>
+                        <th>性别</th>
+                        <th>生日</th>
+                        <th>注册时间</th>
+                        <th>状态</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody id="usersTableBody">
+                    <tr><td colspan="9" style="text-align:center; padding: 30px; color:#6b7280;">加载中...</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="card" style="margin-top: 20px;">
+            <div class="card-title">用户详情</div>
+            <div id="userDetailCard" style="margin-top: 10px;">
+                <div style="color:#6b7280;">选择一个用户查看详情</div>
+            </div>
+        </div>
+    `;
+
+    loadUsersTable();
+}
+
+async function loadUsersTable() {
+    try {
+        const status = 1;
+        const limit = 20;
+        const users = await fetchJson(`${API_BASE}/users/status/${encodeURIComponent(String(status))}?limit=${encodeURIComponent(String(limit))}`);
+
+        const tbody = document.getElementById('usersTableBody');
+        if (!tbody) return;
+        if (!users || users.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="9" style="text-align:center; padding: 30px; color:#6b7280;">暂无数据</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = users.map(u => {
+            const statusText = u.status === 1 ? '正常' : u.status === 0 ? '禁用' : '未知';
+            const badge = u.status === 1 ? 'status-success' : 'status-warning';
+            return `
+                <tr>
+                    <td>${escapeHtml(u.username ?? '-') }</td>
+                    <td>${escapeHtml(u.nickname ?? '-') }</td>
+                    <td>${escapeHtml(u.phone ?? '-') }</td>
+                    <td>${escapeHtml(u.email ?? '-') }</td>
+                    <td>${escapeHtml(u.gender ?? '-') }</td>
+                    <td>${escapeHtml(formatDate(u.birthday))}</td>
+                    <td>${escapeHtml(formatDateTime(u.registerTime))}</td>
+                    <td><span class="status-badge ${badge}">${escapeHtml(statusText)}</span></td>
+                    <td>
+                        <button class="btn" style="padding: 6px 10px; font-size: 12px;" onclick="viewUser('${escapeHtml(u.userId ?? '')}')"><i class="fas fa-eye"></i></button>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+    } catch (e) {
+        console.error(e);
+        const tbody = document.getElementById('usersTableBody');
+        if (tbody) {
+            tbody.innerHTML = '<tr><td colspan="9" style="text-align:center; padding: 30px; color:#ef4444;">加载失败</td></tr>';
+        }
+        showToast('加载用户失败', 'error');
+    }
+}
+
+async function doLogin() {
+    try {
+        showToast('管理员无需登录', 'warning');
+    } catch (e) {
+        console.error(e);
+        showToast('操作失败', 'error');
+    }
+}
+
+async function validateSession() {
+    try {
+        showToast('管理员无需验证会话', 'warning');
+    } catch (e) {
+        console.error(e);
+        showToast('操作失败', 'error');
+    }
+}
+
+async function getMe() {
+    try {
+        showToast('管理员无需登录', 'warning');
+    } catch (e) {
+        console.error(e);
+        showToast('操作失败', 'error');
+    }
+}
+
+async function logout() {
+    try {
+        showToast('管理员无需登出', 'warning');
+    } catch (e) {
+        console.error(e);
+        showToast('操作失败', 'error');
+    }
+}
+
+async function viewUser(userId) {
+    try {
+        if (!userId) {
+            showToast('userId 为空', 'warning');
+            return;
+        }
+        const user = await fetchJson(`${API_BASE}/users/${encodeURIComponent(userId)}`);
+        renderUserDetail(user);
+        showToast('已展示用户信息', 'success');
+    } catch (e) {
+        console.error(e);
+        showToast('获取用户失败', 'error');
+    }
+}
+
+async function loadRankingData() {
+    const pageContainer = document.getElementById('ranking');
+    pageContainer.innerHTML = `
+        <h2 class="page-title">
+            <i class="fas fa-trophy"></i>
+            热销商品榜
+        </h2>
+        <div class="card" style="margin-bottom: 16px;">
+            <div class="card-title">榜单设置</div>
+            <div style="display:flex; gap:10px; margin-top:10px; flex-wrap:wrap; align-items:center;">
+                <input id="hotLimit" placeholder="limit，默认 10" style="width:160px; padding:10px; border:1px solid #e5e7eb; border-radius:8px;">
+                <button class="btn btn-primary" onclick="loadHotRanking()"><i class="fas fa-sync"></i> 刷新榜单</button>
+                <div style="color:#6b7280; font-size:13px;">说明：榜单数据来自后端热销接口（Redis 排行榜聚合）。</div>
+            </div>
+        </div>
+
+        <div class="table-container">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th style="width:70px;">排名</th>
+                        <th>商品</th>
+                        <th style="width:120px;">价格</th>
+                        <th style="width:120px;">销量</th>
+                        <th style="width:120px;">库存</th>
+                        <th style="width:120px;">操作</th>
+                    </tr>
+                </thead>
+                <tbody id="hotRankingBody">
+                    <tr><td colspan="6" style="text-align:center; padding: 30px; color:#6b7280;">加载中...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    `;
+
+    loadHotRanking();
+}
+
+async function loadHotRanking() {
+    try {
+        const limitStr = getInputValue('hotLimit');
+        const limit = limitStr ? Number(limitStr) : 10;
+        const products = await fetchJson(`${API_BASE}/products/hot?limit=${encodeURIComponent(String(limit))}`);
+
+        const tbody = document.getElementById('hotRankingBody');
+        if (!tbody) return;
+        if (!products || products.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding: 30px; color:#6b7280;">暂无数据</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = products.map((p, idx) => {
+            const rank = idx + 1;
+            const badgeColor = rank === 1 ? '#f59e0b' : rank === 2 ? '#9ca3af' : rank === 3 ? '#b45309' : '#6b7280';
+            const stock = p.realTimeStock ?? p.totalStock ?? '-';
+            return `
+                <tr>
+                    <td>
+                        <span style="display:inline-flex; width:32px; height:32px; border-radius:999px; align-items:center; justify-content:center; background:${badgeColor}; color:white; font-weight:700;">
+                            ${rank}
+                        </span>
+                    </td>
+                    <td>
+                        <div style="display:flex; flex-direction:column; gap:4px;">
+                            <div style="font-weight:700;">${escapeHtml(p.name ?? '-')}</div>
+                            <div style="font-size:12px; color:#6b7280;">${escapeHtml(p.productId ?? '')} · ${escapeHtml(p.category ?? '-')}
+                            </div>
+                        </div>
+                    </td>
+                    <td>¥ ${escapeHtml(formatMoney(p.price))}</td>
+                    <td>${escapeHtml(String(p.saleCount ?? 0))}</td>
+                    <td>${escapeHtml(String(stock))}</td>
+                    <td>
+                        <button class="btn" style="padding: 6px 10px; font-size: 12px;" onclick="viewProduct('${escapeHtml(p.productId ?? '')}')">
+                            <i class="fas fa-eye"></i>
+                        </button>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+
+    } catch (e) {
+        console.error(e);
+        const tbody = document.getElementById('hotRankingBody');
+        if (tbody) {
+            tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding: 30px; color:#ef4444;">加载失败</td></tr>';
+        }
+        showToast('加载热销榜失败', 'error');
+    }
+}
+
+window.loadHotRanking = loadHotRanking;
+
+window.loadUsersTable = loadUsersTable;
+window.viewUser = viewUser;

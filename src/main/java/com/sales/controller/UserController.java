@@ -1,6 +1,7 @@
 package com.sales.controller;
 
 import com.sales.entity.User;
+import com.sales.service.SessionService;
 import com.sales.service.UserService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -9,6 +10,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.Set;
 
 @Slf4j
 @RestController
@@ -17,6 +19,9 @@ public class UserController {
 
     @Autowired
     private UserService userService;
+
+    @Autowired
+    private SessionService sessionService;
 
     /**
      * 用户注册
@@ -32,6 +37,51 @@ public class UserController {
         } catch (RuntimeException e) {
             log.error("Registration failed: {}", e.getMessage());
             return ResponseEntity.badRequest().build();
+        }
+    }
+
+    /**
+     * 获取在线用户ID列表（Redis online:users）
+     */
+    @GetMapping("/online")
+    public ResponseEntity<Set<Object>> onlineUsers() {
+        try {
+            return ResponseEntity.ok(sessionService.getOnlineUsers());
+        } catch (Exception e) {
+            log.error("Failed to get online users", e);
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    /**
+     * 获取在线用户详情列表（根据 online:users -> HBase user_profile）
+     */
+    @GetMapping("/online/details")
+    public ResponseEntity<List<User>> onlineUserDetails(@RequestParam(defaultValue = "20") int limit) {
+        try {
+            Set<Object> onlineUsers = sessionService.getOnlineUsers();
+            if (onlineUsers == null || onlineUsers.isEmpty()) {
+                return ResponseEntity.ok(List.of());
+            }
+
+            List<User> users = onlineUsers.stream()
+                    .limit(Math.max(0, limit))
+                    .map(Object::toString)
+                    .map(userId -> {
+                        try {
+                            return userService.getUserById(userId);
+                        } catch (IOException e) {
+                            log.error("Failed to get online user by id: {}", userId, e);
+                            return null;
+                        }
+                    })
+                    .filter(u -> u != null)
+                    .toList();
+
+            return ResponseEntity.ok(users);
+        } catch (Exception e) {
+            log.error("Failed to get online user details", e);
+            return ResponseEntity.internalServerError().build();
         }
     }
 
@@ -61,6 +111,57 @@ public class UserController {
     public ResponseEntity<Void> logout(@RequestParam String sessionId) {
         userService.logout(sessionId);
         return ResponseEntity.ok().build();
+    }
+
+    /**
+     * 验证会话是否有效（Redis）
+     */
+    @GetMapping("/session/validate")
+    public ResponseEntity<Boolean> validateSession(@RequestParam String sessionId) {
+        boolean valid = sessionService.validateSession(sessionId);
+        return ResponseEntity.ok(valid);
+    }
+
+    /**
+     * 获取当前用户（Redis session -> HBase user_profile）
+     */
+    @GetMapping("/me")
+    public ResponseEntity<User> me(@RequestParam String sessionId) {
+        try {
+            String sessionData = sessionService.getSession(sessionId);
+            if (sessionData == null) {
+                return ResponseEntity.status(401).build();
+            }
+
+            String userId = extractUserId(sessionData);
+            if (userId == null || userId.isEmpty()) {
+                return ResponseEntity.status(401).build();
+            }
+
+            User user = userService.getUserById(userId);
+            if (user == null) {
+                return ResponseEntity.notFound().build();
+            }
+            return ResponseEntity.ok(user);
+        } catch (IOException e) {
+            log.error("Failed to get current user by sessionId", e);
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    private String extractUserId(String sessionData) {
+        try {
+            if (sessionData.contains("\"user_id\":")) {
+                int start = sessionData.indexOf("\"user_id\":\"") + 11;
+                int end = sessionData.indexOf("\"", start);
+                if (end > start) {
+                    return sessionData.substring(start, end);
+                }
+            }
+        } catch (Exception e) {
+            log.error("Failed to extract user_id from session data: {}", sessionData, e);
+        }
+        return null;
     }
 
     /**

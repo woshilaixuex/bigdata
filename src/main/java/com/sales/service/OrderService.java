@@ -1,5 +1,6 @@
 package com.sales.service;
 
+import com.sales.config.RedisConfig;
 import com.sales.entity.Order;
 import com.sales.entity.Product;
 import com.sales.repository.OrderRepository;
@@ -13,10 +14,13 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.io.IOException;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 
 @Slf4j
 @Service
@@ -36,6 +40,14 @@ public class OrderService {
 
     @Autowired
     private CartService cartService;
+
+    @Autowired
+    private RedisService redisService;
+
+    @Autowired
+    private RankingService rankingService;
+
+    private static final long ORDER_STATUS_EXPIRE_DAYS = 7;
 
     /**
      * 创建订单
@@ -69,6 +81,9 @@ public class OrderService {
         // 保存订单
         orderRepository.save(order);
 
+        // 订单状态写入Redis（实时）
+        cacheOrderStatus(order.getOrderId(), order.getStatus());
+
         // 清空购物车（如果是从购物车创建的订单）
         if (order.getUserId() != null) {
             // 这里可以根据业务需求决定是否清空购物车
@@ -83,28 +98,36 @@ public class OrderService {
      * 根据ID获取订单
      */
     public Order getOrderById(String orderId) throws IOException {
-        return orderRepository.findById(orderId);
+        Order order = orderRepository.findById(orderId);
+        applyRedisStatusIfPresent(order);
+        return order;
     }
 
     /**
      * 获取用户订单列表
      */
     public List<Order> getUserOrders(String userId, int limit) throws IOException {
-        return orderRepository.findByUserId(userId, limit);
+        List<Order> orders = orderRepository.findByUserId(userId, limit);
+        applyRedisStatusIfPresent(orders);
+        return orders;
     }
 
     /**
      * 获取订单列表（按状态）
      */
     public List<Order> getOrdersByStatus(Integer status, int limit) throws IOException {
-        return orderRepository.findByStatus(status, limit);
+        List<Order> orders = orderRepository.findByStatus(status, limit);
+        applyRedisStatusIfPresent(orders);
+        return orders;
     }
 
     /**
      * 获取最近订单
      */
     public List<Order> getRecentOrders(int limit) throws IOException {
-        return orderRepository.findRecentOrders(limit);
+        List<Order> orders = orderRepository.findRecentOrders(limit);
+        applyRedisStatusIfPresent(orders);
+        return orders;
     }
 
     /**
@@ -130,11 +153,54 @@ public class OrderService {
         
         orderRepository.save(order);
 
+        // 订单状态写入Redis（实时）
+        cacheOrderStatus(order.getOrderId(), order.getStatus());
+
         // 扣减库存
         deductOrderStock(order);
 
+        // 实时销售看板/统计（Redis）
+        updateRealtimeMetricsOnPaid(order);
+
         log.info("Order paid: {}", orderId);
         return true;
+    }
+
+    private void updateRealtimeMetricsOnPaid(Order order) {
+        if (order == null) {
+            return;
+        }
+
+        BigDecimal actualAmount = order.getActualAmount() != null ? order.getActualAmount() : BigDecimal.ZERO;
+
+        // 今日计数器
+        redisService.incr(RedisConfig.RedisKeys.STAT_ORDERS_TODAY, 1);
+        redisService.expire(RedisConfig.RedisKeys.STAT_ORDERS_TODAY, 3600, TimeUnit.SECONDS);
+
+        redisService.incrByFloat(RedisConfig.RedisKeys.STAT_SALES_TODAY, actualAmount.doubleValue());
+        redisService.expire(RedisConfig.RedisKeys.STAT_SALES_TODAY, 3600, TimeUnit.SECONDS);
+
+        // 今日看板 Hash：dashboard:{yyyyMMdd}
+        String dateKey = LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE);
+        String dashboardKey = RedisConfig.RedisKeys.DASHBOARD_PREFIX + dateKey;
+        redisService.hincrByFloat(dashboardKey, "total_amount", actualAmount.doubleValue());
+        redisService.hincrBy(dashboardKey, "order_count", 1);
+        redisService.expire(dashboardKey, 3600, TimeUnit.SECONDS);
+
+        // 热门商品：按订单金额/数量加权
+        if (order.getItems() != null) {
+            for (Order.OrderItem item : order.getItems()) {
+                if (item == null || item.getProductId() == null) {
+                    continue;
+                }
+                int qty = item.getQuantity() != null ? item.getQuantity() : 0;
+                if (qty > 0) {
+                    rankingService.addSalesScore(item.getProductId(), qty);
+                }
+                BigDecimal itemAmount = item.getAmount() != null ? item.getAmount() : BigDecimal.ZERO;
+                rankingService.addPurchaseScore(item.getProductId(), itemAmount.doubleValue());
+            }
+        }
     }
 
     /**
@@ -160,6 +226,9 @@ public class OrderService {
         
         orderRepository.save(order);
 
+        // 订单状态写入Redis（实时）
+        cacheOrderStatus(order.getOrderId(), order.getStatus());
+
         log.info("Order delivered: {}, express: {} {}", orderId, expressCompany, expressNo);
         return true;
     }
@@ -184,6 +253,9 @@ public class OrderService {
         order.setCompleteTime(LocalDateTime.now());
         
         orderRepository.save(order);
+
+        // 订单状态写入Redis（实时）
+        cacheOrderStatus(order.getOrderId(), order.getStatus());
 
         // 增加商品销量
         increaseProductSales(order);
@@ -212,6 +284,9 @@ public class OrderService {
         order.setStatus(Order.Status.CANCELLED.getCode());
         orderRepository.save(order);
 
+        // 订单状态写入Redis（实时）
+        cacheOrderStatus(order.getOrderId(), order.getStatus());
+
         // 释放库存
         releaseOrderStock(order);
 
@@ -224,7 +299,56 @@ public class OrderService {
      */
     public void updateOrderStatus(String orderId, Integer status) throws IOException {
         orderRepository.updateStatus(orderId, status);
+
+        // 订单状态写入Redis（实时）
+        cacheOrderStatus(orderId, status);
         log.info("Order status updated: {} -> {}", orderId, status);
+    }
+
+    private void cacheOrderStatus(String orderId, Integer status) {
+        if (orderId == null || orderId.isEmpty() || status == null) {
+            return;
+        }
+        String key = RedisConfig.RedisKeys.ORDER_STATUS_PREFIX + orderId;
+        redisService.set(key, String.valueOf(status), ORDER_STATUS_EXPIRE_DAYS, TimeUnit.DAYS);
+    }
+
+    private Integer getCachedOrderStatus(String orderId) {
+        if (orderId == null || orderId.isEmpty()) {
+            return null;
+        }
+        String key = RedisConfig.RedisKeys.ORDER_STATUS_PREFIX + orderId;
+        Object obj = redisService.get(key);
+        if (obj == null) {
+            return null;
+        }
+        try {
+            if (obj instanceof Integer) {
+                return (Integer) obj;
+            }
+            return Integer.parseInt(String.valueOf(obj));
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private void applyRedisStatusIfPresent(Order order) {
+        if (order == null) {
+            return;
+        }
+        Integer cached = getCachedOrderStatus(order.getOrderId());
+        if (cached != null) {
+            order.setStatus(cached);
+        }
+    }
+
+    private void applyRedisStatusIfPresent(List<Order> orders) {
+        if (orders == null || orders.isEmpty()) {
+            return;
+        }
+        for (Order order : orders) {
+            applyRedisStatusIfPresent(order);
+        }
     }
 
     /**

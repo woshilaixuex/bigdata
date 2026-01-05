@@ -139,6 +139,17 @@ public class RedisService {
         }
     }
 
+    public double incrByFloat(String key, double delta) {
+        try {
+            Double result = redisTemplate.opsForValue().increment(key, delta);
+            log.debug("Redis incrByFloat: {} by {} = {}", key, delta, result);
+            return result != null ? result : 0.0;
+        } catch (Exception e) {
+            log.error("Redis incrByFloat error: key={}, delta={}", key, delta, e);
+            return 0.0;
+        }
+    }
+
     public long decr(String key) {
         try {
             Long result = redisTemplate.opsForValue().decrement(key);
@@ -222,6 +233,28 @@ public class RedisService {
         } catch (Exception e) {
             log.error("Redis hexists error: key={}, field={}", key, field, e);
             return false;
+        }
+    }
+
+    public long hincrBy(String key, String field, long delta) {
+        try {
+            Long result = redisTemplate.opsForHash().increment(key, field, delta);
+            log.debug("Redis hincrBy: {} {} by {} = {}", key, field, delta, result);
+            return result != null ? result : 0;
+        } catch (Exception e) {
+            log.error("Redis hincrBy error: key={}, field={}, delta={}", key, field, delta, e);
+            return 0;
+        }
+    }
+
+    public double hincrByFloat(String key, String field, double delta) {
+        try {
+            Double result = redisTemplate.opsForHash().increment(key, field, delta);
+            log.debug("Redis hincrByFloat: {} {} by {} = {}", key, field, delta, result);
+            return result != null ? result : 0.0;
+        } catch (Exception e) {
+            log.error("Redis hincrByFloat error: key={}, field={}, delta={}", key, field, delta, e);
+            return 0.0;
         }
     }
 

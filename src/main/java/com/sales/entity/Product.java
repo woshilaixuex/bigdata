@@ -1,5 +1,7 @@
 package com.sales.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -15,6 +17,7 @@ import java.util.Map;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class Product implements Serializable {
     
     private static final long serialVersionUID = 1L;
@@ -83,27 +86,33 @@ public class Product implements Serializable {
     }
     
     // 获取库存状态
+    @JsonIgnore
     public String getStockStatus() {
-        if (realTimeStock == null) {
-            realTimeStock = totalStock;
+        Integer stock = realTimeStock != null ? realTimeStock : totalStock;
+        if (stock == null) {
+            stock = 0;
         }
-        
-        if (realTimeStock <= 0) {
+
+        if (stock <= 0) {
             return "缺货";
-        } else if (realTimeStock <= safeStock) {
-            return "库存不足";
-        } else {
-            return "库存充足";
         }
+
+        if (safeStock != null && stock <= safeStock) {
+            return "库存不足";
+        }
+
+        return "库存充足";
     }
     
     // 检查是否可以购买
+    @JsonIgnore
     public boolean isAvailable() {
         return Status.ON_SHELF.getCode().equals(status) &&
                (realTimeStock == null || realTimeStock > 0);
     }
     
     // 计算毛利率
+    @JsonIgnore
     public BigDecimal getGrossMargin() {
         if (price == null || cost == null || cost.compareTo(BigDecimal.ZERO) == 0) {
             return BigDecimal.ZERO;

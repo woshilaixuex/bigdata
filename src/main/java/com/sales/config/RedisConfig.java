@@ -117,6 +117,9 @@ public class RedisConfig {
         public static final String STAT_ORDERS_TODAY = "stat:orders:today";
         public static final String STAT_SALES_TODAY = "stat:sales:today";
         public static final String HOT_PRODUCTS = "hot:products";
+
+        // 订单状态实时缓存
+        public static final String ORDER_STATUS_PREFIX = "order:status:";
         
         // 限流与计数器
         public static final String LIMIT_PREFIX = "limit:";

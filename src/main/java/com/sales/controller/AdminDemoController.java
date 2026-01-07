@@ -11,6 +11,9 @@ import org.springframework.web.bind.annotation.RestController;
 import java.io.IOException;
 import java.util.Map;
 
+/**
+ * 管理员演示数据模块 - 初始化演示数据
+ */
 @Slf4j
 @RestController
 @RequestMapping("/api/admin")
@@ -19,6 +22,9 @@ public class AdminDemoController {
     @Autowired
     private DemoDataService demoDataService;
 
+    /**
+     * 初始化演示数据（HBase + Redis）
+     */
     @PostMapping("/init-demo")
     public ResponseEntity<?> initDemo() {
         try {

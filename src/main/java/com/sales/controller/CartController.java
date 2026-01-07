@@ -9,6 +9,9 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
+/**
+ * 购物车模块 - 用户购物车（Redis）
+ */
 @Slf4j
 @RestController
 @RequestMapping("/api/cart")
@@ -18,7 +21,7 @@ public class CartController {
     private CartService cartService;
 
     /**
-     * 添加商品到购物车
+     * 添加商品到购物车（Redis）
      */
     @PostMapping("/add")
     public ResponseEntity<Void> addToCart(@RequestBody CartItem cartItem) {
@@ -32,7 +35,7 @@ public class CartController {
     }
 
     /**
-     * 获取用户购物车
+     * 获取用户购物车（Redis）
      */
     @GetMapping("/{userId}")
     public ResponseEntity<List<CartItem>> getCart(@PathVariable String userId) {
@@ -46,7 +49,7 @@ public class CartController {
     }
 
     /**
-     * 更新购物车商品数量
+     * 更新购物车商品数量（Redis）
      */
     @PutMapping("/{userId}/items/{productId}")
     public ResponseEntity<Void> updateQuantity(
@@ -64,7 +67,7 @@ public class CartController {
     }
 
     /**
-     * 删除购物车商品
+     * 删除购物车商品（Redis）
      */
     @DeleteMapping("/{userId}/items/{productId}")
     public ResponseEntity<Void> removeFromCart(
@@ -80,7 +83,7 @@ public class CartController {
     }
 
     /**
-     * 清空购物车
+     * 清空购物车（Redis）
      */
     @DeleteMapping("/{userId}")
     public ResponseEntity<Void> clearCart(@PathVariable String userId) {
@@ -89,52 +92,6 @@ public class CartController {
             return ResponseEntity.ok().build();
         } catch (Exception e) {
             log.error("Failed to clear cart: userId={}", userId, e);
-            return ResponseEntity.internalServerError().build();
-        }
-    }
-
-    /**
-     * 获取购物车商品数量
-     */
-    @GetMapping("/{userId}/count")
-    public ResponseEntity<Integer> getCartItemCount(@PathVariable String userId) {
-        try {
-            int count = cartService.getCartItemCount(userId);
-            return ResponseEntity.ok(count);
-        } catch (Exception e) {
-            log.error("Failed to get cart item count: userId={}", userId, e);
-            return ResponseEntity.internalServerError().build();
-        }
-    }
-
-    /**
-     * 检查购物车中是否存在商品
-     */
-    @GetMapping("/{userId}/items/{productId}/exists")
-    public ResponseEntity<Boolean> existsInCart(
-            @PathVariable String userId,
-            @PathVariable String productId) {
-        try {
-            boolean exists = cartService.existsInCart(userId, productId);
-            return ResponseEntity.ok(exists);
-        } catch (Exception e) {
-            log.error("Failed to check cart item existence: userId={}, productId={}", userId, productId, e);
-            return ResponseEntity.internalServerError().build();
-        }
-    }
-
-    /**
-     * 获取购物车中商品数量
-     */
-    @GetMapping("/{userId}/items/{productId}/quantity")
-    public ResponseEntity<Integer> getProductQuantity(
-            @PathVariable String userId,
-            @PathVariable String productId) {
-        try {
-            int quantity = cartService.getProductQuantity(userId, productId);
-            return ResponseEntity.ok(quantity);
-        } catch (Exception e) {
-            log.error("Failed to get product quantity: userId={}, productId={}", userId, productId, e);
             return ResponseEntity.internalServerError().build();
         }
     }

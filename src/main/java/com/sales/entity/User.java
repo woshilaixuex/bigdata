@@ -6,6 +6,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.io.Serializable;
 import java.math.BigDecimal;
@@ -185,7 +186,8 @@ public class User implements Serializable {
         private String district;         // 区县
         private String detail;          // 详细地址
         private String postcode;        // 邮编
-        private Boolean isDefault;      // 是否默认地址
+        @JsonProperty("is_default")
+        private Boolean isDefault;
         private LocalDateTime createTime; // 创建时间
     }
 }

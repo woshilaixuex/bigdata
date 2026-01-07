@@ -6,8 +6,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
-
+/**
+ * 库存管理模块 - 商品库存实时更新（Redis）
+ */
 @Slf4j
 @RestController
 @RequestMapping("/api/stock")
@@ -17,7 +18,7 @@ public class StockController {
     private StockService stockService;
 
     /**
-     * 设置商品库存
+     * 设置商品库存（Redis）
      */
     @PostMapping("/set")
     public ResponseEntity<Void> setStock(
@@ -33,7 +34,7 @@ public class StockController {
     }
 
     /**
-     * 获取商品库存
+     * 获取商品库存（Redis）
      */
     @GetMapping("/{productId}")
     public ResponseEntity<Integer> getStock(@PathVariable String productId) {
@@ -47,7 +48,7 @@ public class StockController {
     }
 
     /**
-     * 增加库存
+     * 增加库存（Redis）
      */
     @PostMapping("/{productId}/increase")
     public ResponseEntity<Long> increaseStock(
@@ -63,27 +64,7 @@ public class StockController {
     }
 
     /**
-     * 减少库存
-     */
-    @PostMapping("/{productId}/decrease")
-    public ResponseEntity<Long> decreaseStock(
-            @PathVariable String productId,
-            @RequestParam int delta) {
-        try {
-            long newStock = stockService.decreaseStock(productId, delta);
-            if (newStock >= 0) {
-                return ResponseEntity.ok(newStock);
-            } else {
-                return ResponseEntity.badRequest().build();
-            }
-        } catch (Exception e) {
-            log.error("Failed to decrease stock: productId={}, delta={}", productId, delta, e);
-            return ResponseEntity.internalServerError().build();
-        }
-    }
-
-    /**
-     * 原子性扣减库存
+     * 原子性扣减库存（Redis）
      */
     @PostMapping("/{productId}/deduct")
     public ResponseEntity<Boolean> deductStock(
@@ -99,7 +80,7 @@ public class StockController {
     }
 
     /**
-     * 设置秒杀库存
+     * 设置秒杀库存（Redis）
      */
     @PostMapping("/seckill/set")
     public ResponseEntity<Void> setSeckillStock(
@@ -117,23 +98,7 @@ public class StockController {
     }
 
     /**
-     * 获取秒杀库存
-     */
-    @GetMapping("/seckill/{seckillId}/{productId}")
-    public ResponseEntity<Integer> getSeckillStock(
-            @PathVariable String seckillId,
-            @PathVariable String productId) {
-        try {
-            int stock = stockService.getSeckillStock(seckillId, productId);
-            return ResponseEntity.ok(stock);
-        } catch (Exception e) {
-            log.error("Failed to get seckill stock: seckillId={}, productId={}", seckillId, productId, e);
-            return ResponseEntity.internalServerError().build();
-        }
-    }
-
-    /**
-     * 扣减秒杀库存
+     * 扣减秒杀库存（Redis）
      */
     @PostMapping("/seckill/{seckillId}/{productId}/deduct")
     public ResponseEntity<Boolean> deductSeckillStock(
@@ -146,80 +111,6 @@ public class StockController {
         } catch (Exception e) {
             log.error("Failed to deduct seckill stock: seckillId={}, productId={}, quantity={}", 
                     seckillId, productId, quantity, e);
-            return ResponseEntity.internalServerError().build();
-        }
-    }
-
-    /**
-     * 检查库存是否存在
-     */
-    @GetMapping("/{productId}/exists")
-    public ResponseEntity<Boolean> stockExists(@PathVariable String productId) {
-        try {
-            boolean exists = stockService.stockExists(productId);
-            return ResponseEntity.ok(exists);
-        } catch (Exception e) {
-            log.error("Failed to check stock existence: productId={}", productId, e);
-            return ResponseEntity.internalServerError().build();
-        }
-    }
-
-    /**
-     * 删除库存
-     */
-    @DeleteMapping("/{productId}")
-    public ResponseEntity<Void> deleteStock(@PathVariable String productId) {
-        try {
-            stockService.deleteStock(productId);
-            return ResponseEntity.ok().build();
-        } catch (Exception e) {
-            log.error("Failed to delete stock: productId={}", productId, e);
-            return ResponseEntity.internalServerError().build();
-        }
-    }
-
-    /**
-     * 批量获取库存
-     */
-    @PostMapping("/batch")
-    public ResponseEntity<List<Integer>> batchGetStock(@RequestBody List<String> productIds) {
-        try {
-            List<Integer> stocks = stockService.batchGetStock(productIds);
-            return ResponseEntity.ok(stocks);
-        } catch (Exception e) {
-            log.error("Failed to batch get stock", e);
-            return ResponseEntity.internalServerError().build();
-        }
-    }
-
-    /**
-     * 预占库存
-     */
-    @PostMapping("/{productId}/lock")
-    public ResponseEntity<Boolean> lockStock(
-            @PathVariable String productId,
-            @RequestParam int quantity) {
-        try {
-            boolean success = stockService.lockStock(productId, quantity);
-            return ResponseEntity.ok(success);
-        } catch (Exception e) {
-            log.error("Failed to lock stock: productId={}, quantity={}", productId, quantity, e);
-            return ResponseEntity.internalServerError().build();
-        }
-    }
-
-    /**
-     * 释放预占库存
-     */
-    @PostMapping("/{productId}/release")
-    public ResponseEntity<Void> releaseStock(
-            @PathVariable String productId,
-            @RequestParam int quantity) {
-        try {
-            stockService.releaseStock(productId, quantity);
-            return ResponseEntity.ok().build();
-        } catch (Exception e) {
-            log.error("Failed to release stock: productId={}, quantity={}", productId, quantity, e);
             return ResponseEntity.internalServerError().build();
         }
     }

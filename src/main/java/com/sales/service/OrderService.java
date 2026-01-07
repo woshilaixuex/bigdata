@@ -54,12 +54,10 @@ public class OrderService {
      */
     @Transactional
     public Order createOrder(Order order) throws IOException {
-        // 生成订单ID
         if (order.getOrderId() == null || order.getOrderId().isEmpty()) {
             order.setOrderId(generateOrderId());
         }
 
-        // 设置默认值
         if (order.getCreateTime() == null) {
             order.setCreateTime(LocalDateTime.now());
         }
@@ -69,24 +67,17 @@ public class OrderService {
         if (order.getDiscountAmount() == null) {
             order.setDiscountAmount(BigDecimal.ZERO);
         }
-
-        // 计算订单金额
         calculateOrderAmount(order);
 
-        // 检查库存并锁定
         if (!lockOrderStock(order)) {
             throw new RuntimeException("库存不足，无法创建订单");
         }
 
-        // 保存订单
         orderRepository.save(order);
 
-        // 订单状态写入Redis（实时）
         cacheOrderStatus(order.getOrderId(), order.getStatus());
 
-        // 清空购物车（如果是从购物车创建的订单）
         if (order.getUserId() != null) {
-            // 这里可以根据业务需求决定是否清空购物车
             // cartService.clearCart(order.getUserId());
         }
 

@@ -1,7 +1,6 @@
 package com.sales.repository;
 
 import com.sales.utils.JsonUtils;
-import com.sales.config.HBaseConfig;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.hadoop.hbase.TableName;
 import org.apache.hadoop.hbase.client.*;
@@ -12,7 +11,6 @@ import org.springframework.stereotype.Repository;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
 @Slf4j
 @Repository
@@ -92,17 +90,68 @@ public abstract class BaseHBaseRepository {
 
     protected Long getLong(Result result, String family, String qualifier) {
         byte[] bytes = result.getValue(Bytes.toBytes(family), Bytes.toBytes(qualifier));
-        return bytes != null ? Bytes.toLong(bytes) : null;
+        if (bytes == null) {
+            return null;
+        }
+        try {
+            return Bytes.toLong(bytes);
+        } catch (Exception e) {
+            // 兼容用 shell 以字符串写入的场景
+            try {
+                String s = Bytes.toString(bytes);
+                if (s == null || s.isEmpty()) {
+                    return null;
+                }
+                return Long.parseLong(s.replaceAll("[^0-9\\-]", ""));
+            } catch (Exception ignore) {
+                log.error("Failed to decode LONG for {}:{}; raw='{}'", family, qualifier, Bytes.toString(bytes));
+                return null;
+            }
+        }
     }
 
     protected Integer getInteger(Result result, String family, String qualifier) {
         byte[] bytes = result.getValue(Bytes.toBytes(family), Bytes.toBytes(qualifier));
-        return bytes != null ? Bytes.toInt(bytes) : null;
+        if (bytes == null) {
+            return null;
+        }
+        try {
+            return Bytes.toInt(bytes);
+        } catch (Exception e) {
+            // 兼容用 shell 以字符串写入的场景
+            try {
+                String s = Bytes.toString(bytes);
+                if (s == null || s.isEmpty()) {
+                    return null;
+                }
+                return (int) Double.parseDouble(s.replaceAll("[^0-9\\-\\.]", ""));
+            } catch (Exception ignore) {
+                log.error("Failed to decode INT for {}:{}; raw='{}'", family, qualifier, Bytes.toString(bytes));
+                return null;
+            }
+        }
     }
 
     protected Double getDouble(Result result, String family, String qualifier) {
         byte[] bytes = result.getValue(Bytes.toBytes(family), Bytes.toBytes(qualifier));
-        return bytes != null ? Bytes.toDouble(bytes) : null;
+        if (bytes == null) {
+            return null;
+        }
+        try {
+            return Bytes.toDouble(bytes);
+        } catch (Exception e) {
+            // 兼容用 shell 以字符串写入的场景
+            try {
+                String s = Bytes.toString(bytes);
+                if (s == null || s.isEmpty()) {
+                    return null;
+                }
+                return Double.parseDouble(s.replaceAll("[^0-9\\-\\.]", ""));
+            } catch (Exception ignore) {
+                log.error("Failed to decode DOUBLE for {}:{}; raw='{}'", family, qualifier, Bytes.toString(bytes));
+                return null;
+            }
+        }
     }
 
     protected <T> T getJson(Result result, String family, String qualifier, Class<T> clazz) {

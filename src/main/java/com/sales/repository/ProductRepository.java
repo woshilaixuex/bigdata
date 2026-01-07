@@ -247,10 +247,26 @@ public class ProductRepository extends BaseHBaseRepository {
         if (dateTimeStr == null || dateTimeStr.isEmpty()) {
             return null;
         }
+        // 兼容多种常见格式：ISO 与 'yyyy-MM-dd HH:mm:ss'
+        List<DateTimeFormatter> formatters = List.of(
+                DateTimeFormatter.ISO_LOCAL_DATE_TIME,
+                DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+        );
+        for (DateTimeFormatter formatter : formatters) {
+            try {
+                return LocalDateTime.parse(dateTimeStr, formatter);
+            } catch (Exception ignored) {
+            }
+        }
+        // 尝试去掉毫秒/尾部Z等简单清洗后再试
         try {
-            return LocalDateTime.parse(dateTimeStr, DateTimeFormatter.ISO_LOCAL_DATE_TIME);
+            String cleaned = dateTimeStr.replace('T', ' ');
+            if (cleaned.length() > 19) {
+                cleaned = cleaned.substring(0, 19);
+            }
+            return LocalDateTime.parse(cleaned, DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
         } catch (Exception e) {
-            log.error("Failed to parse date time: {}", dateTimeStr, e);
+            log.warn("Unparsable dateTime string: '{}'", dateTimeStr);
             return null;
         }
     }

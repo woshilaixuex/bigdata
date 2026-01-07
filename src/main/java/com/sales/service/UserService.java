@@ -34,7 +34,7 @@ public class UserService {
         if (user.getUserId() == null || user.getUserId().isEmpty()) {
             user.setUserId(generateUserId());
         }
-
+        System.out.println(user.getUsername());
         // 检查用户名是否已存在
         if (userRepository.existsByUsername(user.getUsername())) {
             throw new RuntimeException("用户名已存在");

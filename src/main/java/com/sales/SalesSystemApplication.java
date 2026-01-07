@@ -13,6 +13,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 public class SalesSystemApplication {
 
     public static void main(String[] args) {
+        System.setProperty("hadoop.home.dir", "D:\\hadoop\\winutils-master\\winutils-master\\hadoop-3.3.5");
         SpringApplication.run(SalesSystemApplication.class, args);
     }
 }

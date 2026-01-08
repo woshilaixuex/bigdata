@@ -34,7 +34,7 @@ public class UserService {
         if (user.getUserId() == null || user.getUserId().isEmpty()) {
             user.setUserId(generateUserId());
         }
-        System.out.println(user.getUsername());
+        System.out.println(user.toString());
         // 检查用户名是否已存在
         if (userRepository.existsByUsername(user.getUsername())) {
             throw new RuntimeException("用户名已存在");
@@ -91,11 +91,9 @@ public class UserService {
         if (user == null) {
             throw new RuntimeException("用户不存在");
         }
-
         if (!user.isActive()) {
             throw new RuntimeException("用户已被禁用");
         }
-
         // 生成会话ID
         String sessionId = generateSessionId();
 

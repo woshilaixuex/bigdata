@@ -2,6 +2,7 @@ package com.sales.controller;
 
 import com.sales.entity.CartItem;
 import com.sales.service.CartService;
+import com.sales.service.OrderService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -19,6 +20,9 @@ public class CartController {
 
     @Autowired
     private CartService cartService;
+    
+    @Autowired
+    private OrderService orderService;
 
     /**
      * 添加商品到购物车（Redis）
@@ -92,6 +96,68 @@ public class CartController {
             return ResponseEntity.ok().build();
         } catch (Exception e) {
             log.error("Failed to clear cart: userId={}", userId, e);
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+    
+    /**
+     * 购物车结算
+     */
+    @PostMapping("/{userId}/checkout")
+    public ResponseEntity<com.sales.entity.Order> checkout(@PathVariable String userId) {
+        try {
+            // 从购物车创建订单项
+            List<com.sales.entity.Order.OrderItem> orderItems = cartService.createOrderItems(userId);
+            if (orderItems.isEmpty()) {
+                return ResponseEntity.badRequest().build();
+            }
+            
+            // 创建订单
+            com.sales.entity.Order order = new com.sales.entity.Order();
+            order.setUserId(userId);
+            order.setItems(orderItems);
+            order.setRemark("购物车结算");
+            
+            com.sales.entity.Order createdOrder = orderService.createOrder(order);
+            
+            // 注意：不再立即清空购物车，购物车在支付成功后清空
+            // cartService.clearCart(userId);
+            
+            return ResponseEntity.ok(createdOrder);
+        } catch (Exception e) {
+            log.error("Failed to checkout cart: userId={}", userId, e);
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+    
+    /**
+     * 获取购物车商品数量
+     */
+    @GetMapping("/{userId}/count")
+    public ResponseEntity<Integer> getCartCount(@PathVariable String userId) {
+        try {
+            int count = cartService.getCartItemCount(userId);
+            return ResponseEntity.ok(count);
+        } catch (Exception e) {
+            log.error("Failed to get cart count: userId={}", userId, e);
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+    
+    /**
+     * 更新购物车商品选中状态
+     */
+    @PutMapping("/{userId}/items/{productId}/select")
+    public ResponseEntity<Void> updateSelected(
+            @PathVariable String userId,
+            @PathVariable String productId,
+            @RequestParam Boolean selected) {
+        try {
+            cartService.updateSelected(userId, productId, selected);
+            return ResponseEntity.ok().build();
+        } catch (Exception e) {
+            log.error("Failed to update cart selected status: userId={}, productId={}, selected={}", 
+                    userId, productId, selected, e);
             return ResponseEntity.internalServerError().build();
         }
     }

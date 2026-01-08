@@ -39,6 +39,25 @@ public class OrderController {
     }
 
     /**
+     * 快速支付 - 一键支付订单
+     */
+    @PostMapping("/{orderId}/quick-pay")
+    public ResponseEntity<Order> quickPay(@PathVariable String orderId) {
+        try {
+            boolean paid = orderService.payOrder(orderId, "quick_pay");
+            if (paid) {
+                Order order = orderService.getOrderById(orderId);
+                return ResponseEntity.ok(order);
+            } else {
+                return ResponseEntity.badRequest().build();
+            }
+        } catch (IOException e) {
+            log.error("Failed to quick pay order: {}", orderId, e);
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    /**
      * 获取订单详情（HBase）
      */
     @GetMapping("/{orderId}")
@@ -84,6 +103,20 @@ public class OrderController {
             return ResponseEntity.ok().build();
         } catch (IOException e) {
             log.error("Failed to update order status: {}", orderId, e);
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+    
+    /**
+     * 删除订单（HBase）
+     */
+    @DeleteMapping("/{orderId}")
+    public ResponseEntity<Void> deleteOrder(@PathVariable String orderId) {
+        try {
+            orderService.deleteOrder(orderId);
+            return ResponseEntity.ok().build();
+        } catch (IOException e) {
+            log.error("Failed to delete order: {}", orderId, e);
             return ResponseEntity.internalServerError().build();
         }
     }

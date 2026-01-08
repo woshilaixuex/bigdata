@@ -85,7 +85,7 @@ public class UserRepository extends BaseHBaseRepository {
                 CompareFilter.CompareOp.EQUAL,
                 Bytes.toBytes(username)
         );
-        
+
         scan.setFilter(usernameFilter);
         scan.setLimit(1);
         
@@ -129,7 +129,7 @@ public class UserRepository extends BaseHBaseRepository {
                 CompareFilter.CompareOp.EQUAL,
                 Bytes.toBytes(email)
         );
-        
+        emailFilter.setFilterIfMissing(true);
         scan.setFilter(emailFilter);
         scan.setLimit(1);
         
@@ -195,9 +195,9 @@ public class UserRepository extends BaseHBaseRepository {
         addColumn(put, HBaseConfig.ColumnFamilies.CF_BEHAVIOR, HBaseConfig.Columns.USER_LAST_LOGIN_IP, loginIp);
         
         // 增加登录次数
-        incrementColumnValue(TABLE_NAME, userId, 
-                            HBaseConfig.ColumnFamilies.CF_BEHAVIOR, 
-                            HBaseConfig.Columns.USER_LOGIN_COUNT, 1L);
+        put.addColumn(Bytes.toBytes(HBaseConfig.ColumnFamilies.CF_BEHAVIOR),
+                Bytes.toBytes(HBaseConfig.Columns.USER_LOGIN_COUNT),
+                Bytes.toBytes(0L));
         
         putData(TABLE_NAME, put);
         log.info("User login info updated: {}", userId);

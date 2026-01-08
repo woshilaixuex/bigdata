@@ -195,6 +195,15 @@ public class OrderRepository extends BaseHBaseRepository {
         List<Result> results = scanData(TABLE_NAME, scan);
         return results.size();
     }
+    
+    /**
+     * 删除订单
+     */
+    public void delete(String orderId) throws IOException {
+        Delete delete = createDelete(orderId);
+        deleteData(TABLE_NAME, delete);
+        log.info("Order deleted: {}", orderId);
+    }
 
     private Order mapToOrder(Result result) {
         Order.OrderBuilder builder = Order.builder();

@@ -120,6 +120,7 @@ public class RedisConfig {
 
         // 订单状态实时缓存
         public static final String ORDER_STATUS_PREFIX = "order:status:";
+        public static final String ORDER_STATS_PREFIX = "order:stats:";
         
         // 限流与计数器
         public static final String LIMIT_PREFIX = "limit:";

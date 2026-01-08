@@ -219,6 +219,15 @@ public class StockService {
         
         if (locked) {
             try {
+                // 检查库存是否充足
+                long currentStock = getStock(productId);
+                if (currentStock < quantity) {
+                    log.warn("Insufficient stock for locking: productId={}, required={}, available={}", 
+                            productId, quantity, currentStock);
+                    return false;
+                }
+                
+                // 扣减库存
                 return deductStock(productId, quantity);
             } finally {
                 // 释放锁
@@ -226,7 +235,48 @@ public class StockService {
             }
         }
         
+        log.warn("Failed to acquire stock lock: productId={}", productId);
         return false;
+    }
+    
+    /**
+     * 批量锁定库存
+     */
+    public boolean batchLockStock(java.util.Map<String, Integer> productQuantities) {
+        java.util.List<String> lockedProducts = new java.util.ArrayList<>();
+        
+        try {
+            // 逐个锁定库存
+            for (java.util.Map.Entry<String, Integer> entry : productQuantities.entrySet()) {
+                String productId = entry.getKey();
+                Integer quantity = entry.getValue();
+                
+                if (!lockStock(productId, quantity)) {
+                    // 锁定失败，回滚已锁定的库存
+                    log.error("Failed to lock stock for product: {}, rolling back locked products", productId);
+                    
+                    for (String lockedProductId : lockedProducts) {
+                        // 需要获取原来的数量，这里简化处理
+                        releaseStock(lockedProductId, productQuantities.get(lockedProductId));
+                    }
+                    
+                    return false;
+                }
+                
+                lockedProducts.add(productId);
+            }
+            
+            return true;
+        } catch (Exception e) {
+            log.error("Error during batch stock locking", e);
+            
+            // 回滚已锁定的库存
+            for (String lockedProductId : lockedProducts) {
+                releaseStock(lockedProductId, productQuantities.get(lockedProductId));
+            }
+            
+            return false;
+        }
     }
 
     /**
@@ -235,5 +285,87 @@ public class StockService {
     public void releaseStock(String productId, int quantity) {
         increaseStock(productId, quantity);
         log.info("Released stock: productId={}, quantity={}", productId, quantity);
+    }
+    
+    /**
+     * 检查库存是否充足
+     */
+    public boolean checkStock(String productId, int requiredQuantity) {
+        long currentStock = getStock(productId);
+        return currentStock >= requiredQuantity;
+    }
+    
+    /**
+     * 批量检查库存
+     */
+    public java.util.Map<String, Boolean> batchCheckStock(java.util.Map<String, Integer> productQuantities) {
+        java.util.Map<String, Boolean> results = new java.util.HashMap<>();
+        
+        for (java.util.Map.Entry<String, Integer> entry : productQuantities.entrySet()) {
+            String productId = entry.getKey();
+            Integer requiredQuantity = entry.getValue();
+            results.put(productId, checkStock(productId, requiredQuantity));
+        }
+        
+        return results;
+    }
+    
+    /**
+     * 获取库存详细信息
+     */
+    public StockInfo getStockInfo(String productId) {
+        long currentStock = getStock(productId);
+        boolean exists = stockExists(productId);
+        
+        return StockInfo.builder()
+                .productId(productId)
+                .currentStock((int) currentStock)
+                .exists(exists)
+                .timestamp(System.currentTimeMillis())
+                .build();
+    }
+    
+    /**
+     * 库存信息内部类
+     */
+    public static class StockInfo {
+        private String productId;
+        private Integer currentStock;
+        private Boolean exists;
+        private Long timestamp;
+        
+        public static StockInfoBuilder builder() {
+            return new StockInfoBuilder();
+        }
+        
+        // Getters and Setters
+        public String getProductId() { return productId; }
+        public void setProductId(String productId) { this.productId = productId; }
+        public Integer getCurrentStock() { return currentStock; }
+        public void setCurrentStock(Integer currentStock) { this.currentStock = currentStock; }
+        public Boolean getExists() { return exists; }
+        public void setExists(Boolean exists) { this.exists = exists; }
+        public Long getTimestamp() { return timestamp; }
+        public void setTimestamp(Long timestamp) { this.timestamp = timestamp; }
+        
+        public static class StockInfoBuilder {
+            private String productId;
+            private Integer currentStock;
+            private Boolean exists;
+            private Long timestamp;
+            
+            public StockInfoBuilder productId(String productId) { this.productId = productId; return this; }
+            public StockInfoBuilder currentStock(Integer currentStock) { this.currentStock = currentStock; return this; }
+            public StockInfoBuilder exists(Boolean exists) { this.exists = exists; return this; }
+            public StockInfoBuilder timestamp(Long timestamp) { this.timestamp = timestamp; return this; }
+            public StockInfo build() {
+                StockInfo info = new StockInfo();
+                info.productId = this.productId;
+                info.currentStock = this.currentStock;
+                info.exists = this.exists;
+                info.timestamp = this.timestamp;
+                return info;
+            }
+        }
     }
 }

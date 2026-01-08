@@ -6,6 +6,7 @@ import com.sales.entity.Product;
 import com.sales.repository.OrderRepository;
 import com.sales.repository.ProductRepository;
 import com.sales.service.CartService;
+import com.sales.service.RankingService;
 import com.sales.service.StockService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -40,12 +41,12 @@ public class OrderService {
 
     @Autowired
     private CartService cartService;
+    
+    @Autowired
+    private RankingService rankingService;
 
     @Autowired
     private RedisService redisService;
-
-    @Autowired
-    private RankingService rankingService;
 
     private static final long ORDER_STATUS_EXPIRE_DAYS = 7;
 
@@ -69,16 +70,20 @@ public class OrderService {
         }
         calculateOrderAmount(order);
 
-        if (!lockOrderStock(order)) {
-            throw new RuntimeException("库存不足，无法创建订单");
-        }
+        // 库存已在加入购物车时扣减，这里不再需要锁定库存
 
         orderRepository.save(order);
 
         cacheOrderStatus(order.getOrderId(), order.getStatus());
 
-        if (order.getUserId() != null) {
-            // cartService.clearCart(order.getUserId());
+        // 注意：这里不再清空购物车，因为库存已扣减，购物车应在支付成功后清空
+        // if (order.getUserId() != null) {
+        //     cartService.clearCart(order.getUserId());
+        // }
+        
+        // 设置订单来源为购物车
+        if (order.getRemark() == null || order.getRemark().isEmpty()) {
+            order.setRemark("购物车结算");
         }
 
         log.info("Order created: {}", order.getOrderId());
@@ -147,11 +152,16 @@ public class OrderService {
         // 订单状态写入Redis（实时）
         cacheOrderStatus(order.getOrderId(), order.getStatus());
 
-        // 扣减库存
-        deductOrderStock(order);
+        // 库存已在加入购物车时扣减，这里不再需要扣减库存
+        // deductOrderStock(order);
 
         // 实时销售看板/统计（Redis）
         updateRealtimeMetricsOnPaid(order);
+
+        // 支付成功后清空购物车
+        if (order.getUserId() != null) {
+            cartService.clearCart(order.getUserId());
+        }
 
         log.info("Order paid: {}", orderId);
         return true;
@@ -163,6 +173,15 @@ public class OrderService {
         }
 
         BigDecimal actualAmount = order.getActualAmount() != null ? order.getActualAmount() : BigDecimal.ZERO;
+
+        // 检查是否已经统计过（避免重复统计）
+        String orderStatsKey = RedisConfig.RedisKeys.ORDER_STATS_PREFIX + order.getOrderId();
+        Boolean alreadyCounted = (Boolean) redisService.get(orderStatsKey);
+        
+        if (alreadyCounted != null && alreadyCounted) {
+            log.info("Order already counted in stats: {}", order.getOrderId());
+            return;
+        }
 
         // 今日计数器
         redisService.incr(RedisConfig.RedisKeys.STAT_ORDERS_TODAY, 1);
@@ -192,6 +211,11 @@ public class OrderService {
                 rankingService.addPurchaseScore(item.getProductId(), itemAmount.doubleValue());
             }
         }
+        
+        // 标记该订单已统计过
+        redisService.set(orderStatsKey, true, 7, TimeUnit.DAYS);
+        
+        log.info("Order stats updated: orderId={}, amount={}", order.getOrderId(), actualAmount);
     }
 
     /**
@@ -250,6 +274,9 @@ public class OrderService {
 
         // 增加商品销量
         increaseProductSales(order);
+        
+        // 更新热销榜单
+        updateHotRanking(order);
 
         log.info("Order completed: {}", orderId);
         return true;
@@ -278,22 +305,90 @@ public class OrderService {
         // 订单状态写入Redis（实时）
         cacheOrderStatus(order.getOrderId(), order.getStatus());
 
-        // 释放库存
-        releaseOrderStock(order);
+        // 注意：库存已在购物车中预扣，取消订单不需要额外处理库存
+        // 用户可以通过购物车重新操作或清空购物车来归还库存
+        // releaseOrderStock(order);
 
         log.info("Order cancelled: {}", orderId);
         return true;
+    }
+    
+    /**
+     * 删除订单（物理删除）
+     */
+    public void deleteOrder(String orderId) throws IOException {
+        Order order = orderRepository.findById(orderId);
+        if (order == null) {
+            log.error("Order not found for deletion: {}", orderId);
+            return;
+        }
+        
+        // 如果订单已支付，需要释放库存
+        if (order.getStatus() >= Order.Status.PENDING_DELIVERY.getCode()) {
+            releaseOrderStock(order);
+        }
+        
+        // 删除订单
+        orderRepository.delete(orderId);
+        
+        // 清理Redis缓存
+        String statusKey = RedisConfig.RedisKeys.ORDER_STATUS_PREFIX + orderId;
+        redisService.del(statusKey);
+        
+        // 清理统计标记
+        String statsKey = RedisConfig.RedisKeys.ORDER_STATS_PREFIX + orderId;
+        redisService.del(statsKey);
+        
+        log.info("Order deleted: {}", orderId);
     }
 
     /**
      * 更新订单状态
      */
     public void updateOrderStatus(String orderId, Integer status) throws IOException {
+        // 获取更新前的订单信息
+        Order oldOrder = orderRepository.findById(orderId);
+        Integer oldStatus = oldOrder != null ? oldOrder.getStatus() : null;
+        
+        // 更新订单状态
         orderRepository.updateStatus(orderId, status);
 
         // 订单状态写入Redis（实时）
         cacheOrderStatus(orderId, status);
-        log.info("Order status updated: {} -> {}", orderId, status);
+        
+        // 如果更新为已完成状态，直接更新仪表盘统计
+        if (status.equals(Order.Status.COMPLETED.getCode())) {
+            
+            // 检查是否已经统计过（避免重复统计）
+            String orderStatsKey = RedisConfig.RedisKeys.ORDER_STATS_PREFIX + orderId;
+            Boolean alreadyCounted = (Boolean) redisService.get(orderStatsKey);
+            
+            if (alreadyCounted == null || !alreadyCounted) {
+                // 获取完整订单信息进行统计
+                Order order = orderRepository.findById(orderId);
+                if (order != null && order.getTotalAmount() != null) {
+                    // 直接使用订单金额进行统计
+                    BigDecimal originalActualAmount = order.getActualAmount();
+                    order.setActualAmount(order.getTotalAmount());
+                    
+                    // 更新仪表板统计
+                    updateRealtimeMetricsOnPaid(order);
+                    
+                    // 恢复原来的实际金额
+                    order.setActualAmount(originalActualAmount);
+                    
+                    // 标记该订单已统计过
+                    redisService.set(orderStatsKey, true, 7, TimeUnit.DAYS);
+                    
+                    // 更新热销榜单
+                    updateHotRanking(order);
+                    
+                    log.info("Order completion stats updated: {}, amount={}", orderId, order.getTotalAmount());
+                }
+            }
+        }
+        
+        log.info("Order status updated: {} -> {}, old status: {}", orderId, status, oldStatus);
     }
 
     private void cacheOrderStatus(String orderId, Integer status) {
@@ -457,6 +552,34 @@ public class OrderService {
 
         for (Order.OrderItem item : order.getItems()) {
             stockService.releaseStock(item.getProductId(), item.getQuantity());
+        }
+    }
+
+    /**
+     * 更新热销榜单
+     */
+    private void updateHotRanking(Order order) throws IOException {
+        if (order.getItems() == null) {
+            return;
+        }
+
+        for (Order.OrderItem item : order.getItems()) {
+            String productId = item.getProductId();
+            double amount = item.getAmount() != null ? item.getAmount().doubleValue() : 0.0;
+            
+            // 增加日销售排行榜分数
+            rankingService.addSalesScore(productId, amount);
+            
+            // 增加周销售排行榜分数
+            rankingService.addWeeklySalesScore(productId, amount);
+            
+            // 增加月销售排行榜分数
+            rankingService.addMonthlySalesScore(productId, amount);
+            
+            // 增加热门商品分数（基于购买金额）
+            rankingService.addPurchaseScore(productId, amount);
+            
+            log.info("Updated hot ranking for completed order: productId={}, amount={}", productId, amount);
         }
     }
 

@@ -1,5 +1,6 @@
 package com.sales.entity;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -45,6 +46,9 @@ public class Order implements Serializable {
     private String expressCompany;    // 快递公司
     private String expressNo;         // 快递单号
     private List<LogisticsInfo> logisticsInfo; // 物流轨迹
+    
+    // 备注信息
+    private String remark;            // 订单备注
     
     // 订单状态枚举
     public enum Status {
@@ -151,8 +155,9 @@ public class Order implements Serializable {
     public static class OrderItem implements Serializable {
         
         private static final long serialVersionUID = 1L;
-        
+        @JsonProperty("product_id")
         private String productId;       // 商品ID
+        @JsonProperty("name")
         private String productName;     // 商品名称
         private BigDecimal price;       // 商品单价
         private Integer quantity;       // 数量

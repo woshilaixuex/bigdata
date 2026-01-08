@@ -177,7 +177,6 @@ public class User implements Serializable {
     public static class UserAddress implements Serializable {
         
         private static final long serialVersionUID = 1L;
-        
         private String addressId;       // 地址ID
         private String receiver;        // 收货人
         private String phone;           // 联系电话

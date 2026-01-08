@@ -172,7 +172,6 @@ public class RedisService {
         }
     }
 
-    // =============================Hash=============================
 
     public void hset(String key, String field, Object value) {
         try {
@@ -216,7 +215,7 @@ public class RedisService {
 
     public boolean hdel(String key, String... fields) {
         try {
-            Long result = redisTemplate.opsForHash().delete(key, fields);
+            Long result = redisTemplate.opsForHash().delete(key, (Object[]) fields);
             log.debug("Redis hdel: {} {} = {}", key, fields, result);
             return result != null && result > 0;
         } catch (Exception e) {
@@ -499,7 +498,7 @@ public class RedisService {
 
     public void flushDb() {
         try {
-            redisTemplate.getConnectionFactory().getConnection().flushDb();
+            redisTemplate.getConnectionFactory().getConnection().serverCommands().flushDb();
             log.info("Redis flushDb executed");
         } catch (Exception e) {
             log.error("Redis flushDb error", e);
@@ -508,7 +507,7 @@ public class RedisService {
 
     public void flushAll() {
         try {
-            redisTemplate.getConnectionFactory().getConnection().flushAll();
+            redisTemplate.getConnectionFactory().getConnection().serverCommands().flushAll();
             log.info("Redis flushAll executed");
         } catch (Exception e) {
             log.error("Redis flushAll error", e);
